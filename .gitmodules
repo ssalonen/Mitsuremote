@@ -1,0 +1,6 @@
+[submodule "lib/HeatPump"]
+	path = lib/HeatPump
+	url = https://github.com/SwiCago/HeatPump.git
+[submodule "lib/modbus-esp8266"]
+	path = lib/modbus-esp8266
+	url = https://github.com/emelianov/modbus-esp8266.git
