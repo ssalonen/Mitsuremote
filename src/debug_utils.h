@@ -20,7 +20,7 @@ unsigned long __lastDebugThrottled[50];
     }
 
 WiFiUDP udpClient;
-std::unique_ptr<Syslog> syslog(new Syslog(udpClient, SYSLOG_SERVER, SYSLOG_PORT, CONFIG_AP_NAME, SYSLOG_APP_NAME));
+std::unique_ptr<Syslog> syslog(new Syslog(udpClient, SYSLOG_SERVER, SYSLOG_PORT, ESP_NAME, SYSLOG_APP_NAME));
 
 #ifdef SYSLOG_LOGGING_ENABLED
 #define SYSLOG(x)                                        \

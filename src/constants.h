@@ -4,7 +4,7 @@
 #include <IPAddress.h>
 #include <Esp.h>
 
-#define VERSION "2019-01-05"
+#define VERSION "2020-08-23"
 #define SYSLOG_LOGGING_ENABLED 1
 
 // Syslog server connection info
@@ -26,7 +26,7 @@
 #elif defined(ESP32)
 #define CHIP_ID ((uint16_t)(ESP.getEfuseMac()>>32))
 #endif
-#define CONFIG_AP_NAME String("MitsuRemote-ESP_" + String(CHIP_ID) + String("v") + String(VERSION)).c_str()
+#define ESP_NAME String("MitsuRemote-ESP_" + String(CHIP_ID) + String("v") + String(VERSION)).c_str()
 
 #include "secrets.h"
 
