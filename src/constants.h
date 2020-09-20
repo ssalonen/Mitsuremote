@@ -4,7 +4,7 @@
 #include <IPAddress.h>
 #include <Esp.h>
 
-#define VERSION "2020-08-23"
+#define VERSION "2020-09-20"
 #define SYSLOG_LOGGING_ENABLED 1
 
 // Syslog server connection info
@@ -27,6 +27,20 @@
 #define CHIP_ID ((uint16_t)(ESP.getEfuseMac()>>32))
 #endif
 #define ESP_NAME String("MitsuRemote-ESP_" + String(CHIP_ID) + String("v") + String(VERSION)).c_str()
+
+
+#ifdef ESP8266
+// One and only UART: UART 0
+#define HEATPUMP_UART 0
+#elif defined(ESP32)
+// Use UART1 for heatpump, allowing UART0 for terminal
+// UART 1, GPIO 9 & 10 for RX/TX. GPIO9="D2", GPIO10="""
+#define HEATPUMP_UART 1
+#endif
+
+#if defined(DEBUG) || ( defined(ESP32) && HEATPUMP_UART != 0 )
+#define SERIAL_FREE_FOR_PRINT
+#endif
 
 #include "secrets.h"
 

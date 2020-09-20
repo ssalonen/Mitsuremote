@@ -32,7 +32,9 @@ std::unique_ptr<Syslog> syslog(new Syslog(udpClient, SYSLOG_SERVER, SYSLOG_PORT,
 #define SYSLOG(x)
 #endif
 
-#ifdef DEBUG
+// With ESP32 we are free to use Serial for printing
+// when we use UART1 or UART2 for heatpump
+#ifdef SERIAL_FREE_FOR_PRINT
 #define DEBUG_PRINTLN(x) \
     Serial.println(x);   \
     SYSLOG(x)

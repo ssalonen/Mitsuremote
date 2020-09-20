@@ -57,6 +57,8 @@ using Dir = fs::Dir;
 #endif
 
 
+
+
 // Wait this long before restarting in config portal
 #define CONFIG_PORTAL_TIMEOUT_SECONDS 60
 
@@ -112,6 +114,7 @@ static bool lastCommandPower;
 static bool hvacCommandsPending = true;
 static bool heatPumpConnected;
 static bool otaInProgress;
+static HardwareSerial heatpumpSerial(HEATPUMP_UART); 
 
 #define IMPL_MAP_HELPERS(FROM_STR_FUN, FROM_NUM_FUN, VALUES_SIZE, VALUES) \
   uint16_t FROM_STR_FUN(const char *lookupValue)                          \
@@ -367,7 +370,7 @@ void arduinoOTASetup()
 {
   DEBUG_SCOPE("ArduinoOTA");
   ArduinoOTA.setPort(8266);
-#ifdef DEBUG
+#ifdef SERIAL_FREE_FOR_PRINT
   ArduinoOTA.onStart([]() {
     Serial.println("OTA: Start");
     otaInProgress = true;
@@ -415,7 +418,7 @@ void setup()
 {
   WiFi.mode(WIFI_STA);
 
-#ifdef DEBUG
+#if defined(SERIAL_FREE_FOR_PRINT)
   Serial.begin(74880);
 #endif
   // Listen for remote controller updates ("external" updates)
@@ -439,7 +442,7 @@ void setup()
       if (millis() - wifiStart > WIFI_RETRY_MILLIS)
       {
         DEBUG_PRINTLN("Wifi seems to be down. Shuttinng down heat pump and restarting ESP");
-        heatPumpConnected = hp->connect(&Serial);
+        heatPumpConnected = hp->connect(&heatpumpSerial);
         bool updated = false;
         if (heatPumpConnected)
         {
@@ -551,7 +554,7 @@ void loop()
 #else
   if (!heatPumpConnected)
   {
-    updated = heatPumpConnected = hp->connect(&Serial);
+    updated = heatPumpConnected = hp->connect(&heatpumpSerial);
   }
   else
   {
