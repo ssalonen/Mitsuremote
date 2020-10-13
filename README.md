@@ -37,6 +37,6 @@ The ON/OFF command is read from the remote Modbus server, and heatpump is comman
 
 Please find the definition of Modbus data in `main.cpp` comments.
 
-The ESP logs its operatoin via UDP. You can use wireshark to listen for the data.
+The ESP logs its operatoin via UDP. You can use wireshark or tcpdump to listen for the data. Example: `tcpdump -nnASs 1514 src 192.168.1.167 and port 514`
 
 The program also opens up a simple web server for controlling the heatpump. With ESP8266 this is quite unreliable in practice.
