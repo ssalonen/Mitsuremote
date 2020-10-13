@@ -4,7 +4,7 @@
 #include <IPAddress.h>
 #include <Esp.h>
 
-#define VERSION "2020-09-20"
+#define VERSION "2020-10-13"
 #define SYSLOG_LOGGING_ENABLED 1
 
 // Syslog server connection info
