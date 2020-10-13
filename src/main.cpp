@@ -56,11 +56,10 @@
 using Dir = fs::Dir;
 #endif
 
-
-
-
-// Wait this long before restarting in config portal
-#define CONFIG_PORTAL_TIMEOUT_SECONDS 60
+// Amount of tries to do modbus operations
+#define MODBUS_RETRIES 5
+// Modbus retry sleep
+#define MODBUS_RETRY_SLEEP 100
 
 #define COILS_LEN 2
 #define COIL_RESET_INDEX 0
@@ -109,12 +108,13 @@ static std::array<uint16_t, HOLDING_READ_COUNT> holdingDataRead;
 static unsigned long prevHeatpumpComms;
 static unsigned long prevModbusWrite;
 static unsigned long prevModbusRead;
+static unsigned long prevWifiConnected;
 static bool lastCommandPower;
 // At boot, we take the power on/off command from the PLC
 static bool hvacCommandsPending = true;
 static bool heatPumpConnected;
 static bool otaInProgress;
-static HardwareSerial heatpumpSerial(HEATPUMP_UART); 
+static HardwareSerial heatpumpSerial(HEATPUMP_UART);
 
 #define IMPL_MAP_HELPERS(FROM_STR_FUN, FROM_NUM_FUN, VALUES_SIZE, VALUES) \
   uint16_t FROM_STR_FUN(const char *lookupValue)                          \
@@ -320,20 +320,20 @@ void handleHttpHvac()
       DEBUG_PRINTLN(" ERROR: An Error has occurred while mounting SPIFFS");
       return;
     }
-    #ifdef ESP8266
-      Dir dir = SPIFFS.openDir("/");
-      while (dir.next())
-    #elif defined(ESP32)
-      File dir = SPIFFS.open("/");
-      while (dir.openNextFile())
-    #endif    
+#ifdef ESP8266
+    Dir dir = SPIFFS.openDir("/");
+    while (dir.next())
+#elif defined(ESP32)
+    File dir = SPIFFS.open("/");
+    while (dir.openNextFile())
+#endif
     {
       DEBUG_PRINT(" SPIFFS: ");
-      #ifdef ESP8266
-        DEBUG_PRINTLN(dir.fileName());
-      #elif defined(ESP32)
-        DEBUG_PRINT(dir.name());
-      #endif
+#ifdef ESP8266
+      DEBUG_PRINTLN(dir.fileName());
+#elif defined(ESP32)
+      DEBUG_PRINT(dir.name());
+#endif
     }
     DEBUG_PRINTLN(" SPIFFS direcotry listing completed.");
   }
@@ -414,6 +414,41 @@ void arduinoOTASetup()
   ArduinoOTA.begin();
 }
 
+void connectWifiOrRestart(bool setup)
+{
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  prevWifiConnected = millis();
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+    DEBUG_PRINTLN("Connecting...");
+    if (millis() - prevWifiConnected > WIFI_RETRY_MILLIS)
+    {
+      DEBUG_PRINTLN("Wifi seems to be down. Shuttinng down heat pump and restarting ESP");
+      bool heatPumpConnected;
+      if (!hp->isConnected())
+      {
+        heatPumpConnected = hp->connect(&heatpumpSerial);
+      }
+      bool updated = false;
+      if (heatPumpConnected)
+      {
+        hp->setPowerSetting(false);
+        updated = hp->update();
+      }
+      DEBUG_PRINTLN("Managed to shutdown the pump: " + String(heatPumpConnected && updated) + " (connected " + String(heatPumpConnected) + ")");
+      ESP.restart();
+      while (true)
+      {
+        // wait for reboot
+        delay(1000);
+      }
+    }
+  }
+  // Wifi is connected
+  prevWifiConnected = millis();
+}
+
 void setup()
 {
   WiFi.mode(WIFI_STA);
@@ -429,36 +464,7 @@ void setup()
     hp->enableExternalUpdate();
   }
 
-  //
-  // WiFi
-  //
-  {
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    unsigned long wifiStart = millis();
-    while (WiFi.status() != WL_CONNECTED)
-    {
-      delay(500);
-      DEBUG_PRINTLN("Connecting...");
-      if (millis() - wifiStart > WIFI_RETRY_MILLIS)
-      {
-        DEBUG_PRINTLN("Wifi seems to be down. Shuttinng down heat pump and restarting ESP");
-        heatPumpConnected = hp->connect(&heatpumpSerial);
-        bool updated = false;
-        if (heatPumpConnected)
-        {
-          hp->setPowerSetting(false);
-          updated = hp->update();
-        }
-        DEBUG_PRINTLN("Managed to shutdown the pump: " + String(heatPumpConnected && updated) + " (connected " + String(heatPumpConnected) + ")");
-        ESP.restart();
-        while (true)
-        {
-          // wait for reboot
-          delay(1000);
-        }
-      }
-    }
-  }
+  connectWifiOrRestart(true);
 
   arduinoOTASetup();
   // Start local webserver
@@ -474,57 +480,122 @@ void setup()
   modbusSetup();
 }
 
+void maybeReconnectModbus()
+{
+  if (!mb->isConnected(REMOTE_MODBUS_IP))
+  {
+    bool connected = mb->connect(REMOTE_MODBUS_IP, REMOTE_MODBUS_PORT);
+    DEBUG_PRINTLN("Modbus client not connected. Trying to connect... Success: " + String(connected));
+  }
+}
+
+boolean modbusRead()
+{
+  bool readSuccess = false;
+  for (int i = 0; i < MODBUS_RETRIES; i++)
+  {
+    maybeReconnectModbus();
+    readSuccess = mb->readHreg(REMOTE_MODBUS_IP, 0, holdingDataRead.begin(), holdingDataRead.size(), nullptr, REMOTE_MODBUS_UNIT_ID);
+    if (readSuccess)
+    {
+      prevModbusRead = millis();
+      break;
+    }
+    delay(MODBUS_RETRY_SLEEP);
+  }
+  return readSuccess;
+}
+
+boolean modbusWrite()
+{
+  holdingDataWrite = getHoldingRegistersToWrite();
+  bool writeSuccess = false;
+  for (int i = 0; i < MODBUS_RETRIES; i++)
+  {
+    maybeReconnectModbus();
+    writeSuccess = mb->writeHreg(REMOTE_MODBUS_IP, holdingDataWrite.size(), holdingDataWrite.begin(), holdingDataWrite.size(), nullptr, REMOTE_MODBUS_UNIT_ID);
+    if (writeSuccess)
+    {
+      prevModbusWrite = millis();
+      break;
+    }
+    else
+    {
+      mb->disconnect(REMOTE_MODBUS_IP);
+    }
+    delay(MODBUS_RETRY_SLEEP);
+  }
+}
+
 void modbusLoop()
 {
   if (MODBUS_CLIENT_ENABLED)
   {
-    if (!mb->isConnected(REMOTE_MODBUS_IP))
-    {      
-      bool connectSuccess = mb->connect(REMOTE_MODBUS_IP, REMOTE_MODBUS_PORT);
-      DEBUG_PRINTLN_THROTTLED(1, "Modbus client not connected. Trying to connect... Success: " + String(connectSuccess));
-    }
-    if (mb->isConnected(REMOTE_MODBUS_IP))
+    maybeReconnectModbus();
+    //
+    // have a chance to progress on the background with other modbus activities
+    //
+    mb->task();
+    yield();
+
+    //
+    // read commands
+    //
+    if (mb->isConnected(REMOTE_MODBUS_IP) && millis() - prevModbusRead > REMOTE_MODBUS_READ_INTERVAL_MILLIS)
     {
-      if (millis() - prevModbusWrite > REMOTE_MODBUS_READ_INTERVAL_MILLIS)
+      bool prevPowerOn = lastCommandPower;
+      bool readSuccess = modbusRead();
+      bool newCommand = holdingDataRead[0] != 0;
+      if (readSuccess)
       {
-        bool prevPowerOn = lastCommandPower;
-        bool readSuccess = mb->readHreg(REMOTE_MODBUS_IP, 0, holdingDataRead.begin(), holdingDataRead.size(), nullptr, REMOTE_MODBUS_UNIT_ID);
-        bool newCommand = holdingDataRead[0] != 0;
-        if (readSuccess)
+        if (prevModbusRead == 0 || lastCommandPower != newCommand)
         {
-          if (prevModbusRead == 0 || lastCommandPower != newCommand)
-          {
-            hvacCommandsPending = true;
-          }
-          lastCommandPower = newCommand;
-          prevModbusRead = millis();
+          hvacCommandsPending = true;
         }
-        DEBUG_PRINTLN_THROTTLED(2, "Modbus client connected. Reading registers, success: " + String(readSuccess) + String(". Last command power=") + String(newCommand) //
-                                       + String(", before that ") + String(prevPowerOn)                       //
-                                       + String(", pending write: ") + String(hvacCommandsPending));
-      }
-      if (millis() - prevModbusWrite > REMOTE_MODBUS_WRITE_INTERVAL_MILLIS)
-      {        
-        holdingDataWrite = getHoldingRegistersToWrite();
-        bool writeSuccess = mb->writeHreg(REMOTE_MODBUS_IP, holdingDataRead.size(), holdingDataWrite.begin(), holdingDataWrite.size(), nullptr, REMOTE_MODBUS_UNIT_ID);
-        if (writeSuccess)
-        {
-          prevModbusWrite = millis();
-        }
-        DEBUG_PRINT_THROTTLED(3, "Modbus client connected. Wrote registers, success: " + String(writeSuccess));
+        lastCommandPower = newCommand;
       }
       else
       {
-        DEBUG_PRINTLN_THROTTLED(4, "(write skipped)");
+        mb->disconnect(REMOTE_MODBUS_IP);
       }
+      DEBUG_PRINTLN_THROTTLED(2, "Modbus client connected. Reading registers, success: " + String(readSuccess) + String(". Last command power=") + String(newCommand) //
+                                     + String(", before that ") + String(prevPowerOn)                                                                                 //
+                                     + String(", pending write: ") + String(hvacCommandsPending));
+    }
+    else
+    {
+      DEBUG_PRINTLN_THROTTLED(6, "(read skipped)");
+    }
+    //
+    // have a chance to progress on the background with other modbus activities
+    //
+    mb->task();
+    yield();
+    //
+    // write current state
+    //
+    if (mb->isConnected(REMOTE_MODBUS_IP) && millis() - prevModbusWrite > REMOTE_MODBUS_WRITE_INTERVAL_MILLIS)
+    {
+      bool writeSuccess = modbusWrite();
+      DEBUG_PRINT_THROTTLED(3, "Modbus client connected. Wrote registers, success: " + String(writeSuccess));
+    }
+    else
+    {
+      DEBUG_PRINTLN_THROTTLED(4, "(write skipped)");
     }
   }
+  // TODO: simplify above (NOTE ONE BUG FOUND ALREADY)
+  //
+  // have a chance to progress on the background with other modbus activities
+  //
   mb->task();
+  yield();
 }
 
 void loop()
 {
   DEBUG_PRINT_THROTTLED(0, "loop, uptime in secs: " + String(float(millis() / 1000.)));
+  connectWifiOrRestart(false);
   yield();
   if (!otaInProgress && WiFi.status() != WL_CONNECTED)
   {
@@ -544,16 +615,17 @@ void loop()
   {
     httpServer->handleClient();
   }
-  yield();
-  bool updated = false;
+  yield();  
 #ifdef DEBUG
   DEBUG_PRINTLN_THROTTLED(5, "In debug mode, not syncing/connecting heat pump");
 #else
-  if (!heatPumpConnected)
+  if (!hp->isConnected())
   {
-    updated = heatPumpConnected = hp->connect(&heatpumpSerial);
+    hp->connect(&heatpumpSerial);
   }
-  else
+  yield();
+  bool updated = false;
+  if(hp->isConnected())
   {
     bool upToDatePowerCommandAvailable = (prevModbusRead != 0) && (millis() - prevModbusRead < 60000);
     if (hvacCommandsPending && upToDatePowerCommandAvailable)
@@ -573,8 +645,8 @@ void loop()
     {
       if (hvacCommandsPending)
       {
-        DEBUG_PRINTLN("Power successfully set to " + String(lastCommandPower) + 
-          ". Reseting hvacCommandsPending flag");
+        DEBUG_PRINTLN("Power successfully set to " + String(lastCommandPower) +
+                      ". Reseting hvacCommandsPending flag");
       }
       // HVAC state is synchronized to target state
       hvacCommandsPending = false;
