@@ -370,47 +370,46 @@ void arduinoOTASetup()
 {
   DEBUG_SCOPE("ArduinoOTA");
   ArduinoOTA.setPort(8266);
-#ifdef SERIAL_FREE_FOR_PRINT
   ArduinoOTA.onStart([]() {
-    Serial.println("OTA: Start");
+    DEBUG_PRINTLN("OTA: Start");
     otaInProgress = true;
   });
   ArduinoOTA.onEnd([]() {
-    Serial.println("\nOTA: End");
+    DEBUG_PRINTLN("\nOTA: End");
     otaInProgress = false;
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    Serial.printf("OTA: Progress: %u%%\r", (progress / (total / 100)));
+    DEBUG_PRINTLN("OTA: Progress: "+ String(progress / (total / 100))+ "%" ));
     otaInProgress = true;
   });
   ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("Error[%u]: ", error);
     if (error == OTA_AUTH_ERROR)
-      Serial.println("OTA: Auth Failed");
+    {
+      DEBUG_PRINTLN("OTA: Auth Failed (" + String(error) + ")");
+    }
     else if (error == OTA_BEGIN_ERROR)
-      Serial.println("OTA: Begin Failed");
+    {
+      DEBUG_PRINTLN("OTA: Begin Failed (" + String(error) + ")");
+    }
     else if (error == OTA_CONNECT_ERROR)
-      Serial.println("OTA: Connect Failed");
+    {
+      DEBUG_PRINTLN("OTA: Connect Failed (" + String(error) + ")");
+    }
     else if (error == OTA_RECEIVE_ERROR)
-      Serial.println("OTA: Receive Failed");
+    {
+      DEBUG_PRINTLN("OTA: Receive Failed (" + String(error) + ")");
+    }
     else if (error == OTA_END_ERROR)
-      Serial.println("OTA: End Failed");
+    {
+      DEBUG_PRINTLN("OTA: End Failed (" + String(error) + ")");
+    }
+    else
+    {
+      DEBUG_PRINTLN("OTA: Unknown Failed (" + String(error) + ")");
+    }
     otaInProgress = false;
   });
-#else
-  ArduinoOTA.onStart([]() {
-    otaInProgress = true;
-  });
-  ArduinoOTA.onEnd([]() {
-    otaInProgress = false;
-  });
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    otaInProgress = true;
-  });
-  ArduinoOTA.onError([](ota_error_t error) {
-    otaInProgress = false;
-  });
-#endif
+
   ArduinoOTA.begin();
 }
 
@@ -468,6 +467,7 @@ void setup()
 
   arduinoOTASetup();
   // Start local webserver
+  if (HTTP_SERVER_ENABLED)
   {
     DEBUG_PRINT("Starting HTTP Server ");
     DEBUG_PRINTLN(WiFi.localIP().toString());
@@ -475,6 +475,10 @@ void setup()
     httpServer->on("/", handleHttpHvac);
     httpServer->onNotFound(handleHttpNotFound);
     httpServer->begin();
+  }
+  else
+  {
+    DEBUG_PRINTLN("HTTP Server disabled.");
   }
 
   modbusSetup();
@@ -531,10 +535,12 @@ void modbusLoop()
 {
   if (MODBUS_CLIENT_ENABLED)
   {
+    yield();
     maybeReconnectModbus();
     //
     // have a chance to progress on the background with other modbus activities
     //
+    yield();
     mb->task();
     yield();
 
@@ -569,6 +575,7 @@ void modbusLoop()
     //
     // have a chance to progress on the background with other modbus activities
     //
+    yield();
     mb->task();
     yield();
     //
@@ -588,6 +595,7 @@ void modbusLoop()
   //
   // have a chance to progress on the background with other modbus activities
   //
+  yield();
   mb->task();
   yield();
 }
@@ -615,7 +623,7 @@ void loop()
   {
     httpServer->handleClient();
   }
-  yield();  
+  yield();
 #ifdef DEBUG
   DEBUG_PRINTLN_THROTTLED(5, "In debug mode, not syncing/connecting heat pump");
 #else
@@ -625,7 +633,7 @@ void loop()
   }
   yield();
   bool updated = false;
-  if(hp->isConnected())
+  if (hp->isConnected())
   {
     bool upToDatePowerCommandAvailable = (prevModbusRead != 0) && (millis() - prevModbusRead < 60000);
     if (hvacCommandsPending && upToDatePowerCommandAvailable)
