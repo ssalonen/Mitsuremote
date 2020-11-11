@@ -519,7 +519,7 @@ boolean modbusWrite()
   for (int i = 0; i < MODBUS_RETRIES; i++)
   {
     maybeReconnectModbus();
-    writeSuccess = mb->writeHreg(REMOTE_MODBUS_IP, holdingDataWrite.size(), holdingDataWrite.begin(), holdingDataWrite.size(), nullptr, REMOTE_MODBUS_UNIT_ID);
+    writeSuccess = mb->writeHreg(REMOTE_MODBUS_IP, /* offset */ HOLDING_READ_COUNT, holdingDataWrite.begin(), holdingDataWrite.size(), nullptr, REMOTE_MODBUS_UNIT_ID);
     if (writeSuccess)
     {
       String dataWritten = "Modbus data written: ";
