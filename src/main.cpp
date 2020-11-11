@@ -379,7 +379,7 @@ void arduinoOTASetup()
     otaInProgress = false;
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    DEBUG_PRINTLN("OTA: Progress: "+ String(progress / (total / 100))+ "%" ));
+    DEBUG_PRINTLN("OTA: Progress: "+ String(progress / (total / 100))+ "%" );
     otaInProgress = true;
   });
   ArduinoOTA.onError([](ota_error_t error) {
