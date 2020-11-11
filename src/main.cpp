@@ -523,15 +523,15 @@ boolean modbusWrite()
     if (writeSuccess)
     {
       String dataWritten = "Modbus data written: ";
-      for (uint16_t j = 0; j < holdingDataWrite.size(); j++)
+      for (auto it = holdingDataWrite.begin(), end = holdingDataWrite.end(); it != end; it++)
       {
-        dataWritten += String(holdingDataWrite[j]);
-        if (j + 1 < holdingDataWrite.size() )
+        dataWritten += String(*it);
+        if (it + 1 != end)
         {
           dataWritten += ", ";
         }
-        DEBUG_PRINTLN(dataWritten);
       }
+      DEBUG_PRINTLN(dataWritten);
       prevModbusWrite = millis();
       return true;
     }
