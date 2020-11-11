@@ -414,7 +414,9 @@ void arduinoOTASetup()
 
 void connectWifiOrRestart(bool setup)
 {
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  if(setup) {
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  }
   prevWifiConnected = millis();
   while (WiFi.status() != WL_CONNECTED)
   {
