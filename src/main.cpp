@@ -520,7 +520,7 @@ boolean modbusWrite()
     if (writeSuccess)
     {
       prevModbusWrite = millis();
-      break;
+      return true;
     }
     else
     {
@@ -528,6 +528,7 @@ boolean modbusWrite()
     }
     delay(MODBUS_RETRY_SLEEP);
   }
+  return false;
 }
 
 void modbusLoop()
