@@ -378,7 +378,7 @@ void arduinoOTASetup()
     otaInProgress = false;
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    DEBUG_PRINTLN("OTA: Progress: "+ String(progress / (total / 100))+ "%" );
+    DEBUG_PRINTLN("OTA: Progress: " + String(progress / (total / 100)) + "%");
     otaInProgress = true;
   });
   ArduinoOTA.onError([](ota_error_t error) {
@@ -414,7 +414,8 @@ void arduinoOTASetup()
 
 void connectWifiOrRestart(bool setup)
 {
-  if(setup) {
+  if (setup)
+  {
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   }
   prevWifiConnected = millis();
@@ -521,6 +522,16 @@ boolean modbusWrite()
     writeSuccess = mb->writeHreg(REMOTE_MODBUS_IP, holdingDataWrite.size(), holdingDataWrite.begin(), holdingDataWrite.size(), nullptr, REMOTE_MODBUS_UNIT_ID);
     if (writeSuccess)
     {
+      String dataWritten = "Modbus data written: ";
+      for (uint16_t j = 0; j < holdingDataWrite.size(); j++)
+      {
+        dataWritten += String(holdingDataWrite[j]);
+        if (j + 1 < holdingDataWrite.size() )
+        {
+          dataWritten += ", ";
+        }
+        DEBUG_PRINTLN(dataWritten);
+      }
       prevModbusWrite = millis();
       return true;
     }
