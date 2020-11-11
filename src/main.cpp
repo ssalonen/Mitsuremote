@@ -112,7 +112,6 @@ static unsigned long prevWifiConnected;
 static bool lastCommandPower;
 // At boot, we take the power on/off command from the PLC
 static bool hvacCommandsPending = true;
-static bool heatPumpConnected;
 static bool otaInProgress;
 static HardwareSerial heatpumpSerial(HEATPUMP_UART);
 
@@ -424,8 +423,8 @@ void connectWifiOrRestart(bool setup)
     if (millis() - prevWifiConnected > WIFI_RETRY_MILLIS)
     {
       DEBUG_PRINTLN("Wifi seems to be down. Shuttinng down heat pump and restarting ESP");
-      bool heatPumpConnected;
-      if (!hp->isConnected())
+      bool heatPumpConnected = hp->isConnected();
+      if (!heatPumpConnected)
       {
         heatPumpConnected = hp->connect(&heatpumpSerial);
       }
